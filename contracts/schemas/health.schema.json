@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sirgunther.github.io/WhisperService/schemas/health.schema.json",
+  "title": "WhisperService health 1.0.0",
+  "type": "object",
+  "required": ["version", "ready", "serviceVersion", "protocolVersion", "model", "language", "activeSessions", "capabilities"],
+  "properties": {
+    "version": { "const": "1.0.0" },
+    "ready": { "type": "boolean" },
+    "serviceVersion": { "const": "1.0.0" },
+    "protocolVersion": { "const": "1.0.0" },
+    "model": { "type": "string" },
+    "language": { "const": "en" },
+    "activeSessions": { "type": "integer", "minimum": 0, "maximum": 4 },
+    "capabilities": { "type": "object" }
+  }
+}

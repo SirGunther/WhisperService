@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sirgunther.github.io/WhisperService/schemas/config.schema.json",
+  "title": "WhisperService configuration 1.0.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "host", "port", "language", "allowedOrigins", "limits", "speech", "runtime"],
+  "properties": {
+    "version": { "const": "1.0.0" },
+    "host": { "const": "127.0.0.1" },
+    "port": { "const": 8178 },
+    "language": { "const": "en" },
+    "allowedOrigins": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1, "not": { "const": "*" } } },
+    "limits": {
+      "type": "object", "additionalProperties": false,
+      "required": ["maxActiveSessions", "maxUtteranceMs", "idleSessionMs"],
+      "properties": {
+        "maxActiveSessions": { "type": "integer", "minimum": 1, "maximum": 4 },
+        "maxUtteranceMs": { "type": "integer", "minimum": 1000, "maximum": 10000 },
+        "idleSessionMs": { "type": "integer", "minimum": 15000, "maximum": 600000 }
+      }
+    },
+    "speech": {
+      "type": "object", "additionalProperties": false,
+      "required": ["minSpeechMs", "pauseMs", "speechRms", "silenceRms", "previewMs"],
+      "properties": {
+        "minSpeechMs": { "type": "integer", "minimum": 40, "maximum": 2000 },
+        "pauseMs": { "type": "integer", "minimum": 250, "maximum": 5000 },
+        "speechRms": { "type": "number", "minimum": 0.001, "maximum": 1 },
+        "silenceRms": { "type": "number", "minimum": 0, "exclusiveMaximum": 1 },
+        "previewMs": { "type": "integer", "minimum": 1500, "maximum": 3000 }
+      }
+    },
+    "runtime": {
+      "type": "object", "additionalProperties": false,
+      "required": ["workerPath", "modelPath", "modelSha256", "whisperCppTag"],
+      "properties": {
+        "workerPath": { "type": "string", "minLength": 1 },
+        "modelPath": { "type": "string", "minLength": 1 },
+        "modelSha256": { "type": "string", "pattern": "^[a-fA-F0-9]{64}$" },
+        "whisperCppTag": { "const": "v1.9.1" }
+      }
+    }
+  }
+}

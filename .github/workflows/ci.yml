@@ -1,0 +1,36 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test-and-build:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm audit --audit-level=high
+      - run: npm test
+      - name: Check out pinned whisper.cpp source
+        shell: pwsh
+        run: git clone --branch v1.9.1 --depth 1 https://github.com/ggml-org/whisper.cpp.git "$env:RUNNER_TEMP\whisper.cpp"
+      - name: Verify whisper.cpp commit
+        shell: pwsh
+        run: |
+          $actual = git -C "$env:RUNNER_TEMP\whisper.cpp" rev-parse HEAD
+          if ($actual -ne 'f049fff95a089aa9969deb009cdd4892b3e74916') { throw "Unexpected whisper.cpp commit: $actual" }
+      - name: Configure native worker
+        shell: pwsh
+        run: cmake -S native -B build "-DWHISPER_CPP_SOURCE_DIR=$env:RUNNER_TEMP\whisper.cpp" -DCMAKE_BUILD_TYPE=Release
+      - name: Compile native worker without model download
+        run: cmake --build build --config Release --target whisper-worker

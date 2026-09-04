@@ -1,0 +1,115 @@
+openapi: 3.1.0
+info:
+  title: WhisperService
+  version: 1.0.0
+  description: Private loopback-only English Whisper transcription service. WebSocket details are published with x-websocket-events.
+servers:
+  - url: http://127.0.0.1:8178
+security:
+  - bearerToken: []
+paths:
+  /v1/health:
+    get:
+      operationId: getHealth
+      responses:
+        '200':
+          description: Readiness and capabilities
+          content:
+            application/json:
+              schema:
+                $ref: ./schemas/health.schema.json
+        '401': { $ref: '#/components/responses/Error' }
+  /v1/sessions:
+    post:
+      operationId: createSession
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: './schemas/session-create.schema.json#/$defs/request'
+      responses:
+        '201':
+          description: Isolated session and 15-second single-use WebSocket ticket
+          content:
+            application/json:
+              schema:
+                $ref: './schemas/session-create.schema.json#/$defs/response'
+        '401': { $ref: '#/components/responses/Error' }
+        '429': { $ref: '#/components/responses/Error' }
+  /v1/sessions/{id}:
+    delete:
+      operationId: cancelSession
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204': { description: Session cancelled and erased without a transcript }
+        '401': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+  /v1/sessions/{id}/stream:
+    get:
+      operationId: streamSession
+      description: Upgrade to WebSocket. The ticket authenticates the upgrade; binary messages are PCM16 LE at 16 kHz mono.
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: ticket
+          in: query
+          required: true
+          schema: { type: string }
+      x-websocket-events:
+        clientText: { $ref: ./schemas/control.schema.json }
+        clientBinary: { description: PCM16 little-endian, 16 kHz, mono }
+        server: { $ref: ./schemas/events.schema.json }
+      responses:
+        '101': { description: WebSocket protocol switch }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+  /v1/audio/transcriptions:
+    post:
+      operationId: transcribeWav
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, version]
+              properties:
+                file: { type: string, contentMediaType: audio/wav }
+                version: { const: 1.0.0 }
+                response_format: { type: string, enum: [json, text], default: json }
+      responses:
+        '200':
+          description: Final transcript
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [version, text, segments, language]
+                properties:
+                  version: { const: 1.0.0 }
+                  text: { type: string }
+                  segments: { type: array, items: { $ref: './schemas/events.schema.json#/$defs/segment' } }
+                  language: { const: en }
+            text/plain:
+              schema: { type: string }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+components:
+  securitySchemes:
+    bearerToken:
+      type: http
+      scheme: bearer
+  responses:
+    Error:
+      description: Versioned stable error envelope
+      content:
+        application/json:
+          schema:
+            $ref: ./schemas/error.schema.json

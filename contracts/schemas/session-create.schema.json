@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sirgunther.github.io/WhisperService/schemas/session-create.schema.json",
+  "title": "Create streaming session 1.0.0",
+  "$defs": {
+    "request": {
+      "type": "object", "additionalProperties": false,
+      "required": ["version"],
+      "properties": { "version": { "const": "1.0.0" }, "previewMs": { "type": "integer", "minimum": 1500, "maximum": 3000 } }
+    },
+    "response": {
+      "type": "object", "additionalProperties": false,
+      "required": ["version", "sessionId", "websocketTicket", "ticketExpiresAt", "streamUrl", "previewMs"],
+      "properties": {
+        "version": { "const": "1.0.0" },
+        "sessionId": { "type": "string", "format": "uuid" },
+        "websocketTicket": { "type": "string", "minLength": 43 },
+        "ticketExpiresAt": { "type": "string", "format": "date-time" },
+        "streamUrl": { "type": "string", "pattern": "^ws://127\\.0\\.0\\.1:8178/v1/sessions/" },
+        "previewMs": { "type": "integer", "minimum": 1500, "maximum": 3000 }
+      }
+    }
+  }
+}

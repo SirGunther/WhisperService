@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sirgunther.github.io/WhisperService/schemas/events.schema.json",
+  "title": "WhisperService streaming events 1.0.0",
+  "oneOf": [
+    { "$ref": "#/$defs/sessionReady" },
+    { "$ref": "#/$defs/partial" },
+    { "$ref": "#/$defs/final" },
+    { "$ref": "#/$defs/empty" },
+    { "$ref": "#/$defs/error" },
+    { "$ref": "#/$defs/closed" }
+  ],
+  "$defs": {
+    "base": {
+      "type": "object",
+      "required": ["version", "type"],
+      "properties": { "version": { "const": "1.0.0" }, "type": { "type": "string" } }
+    },
+    "segment": {
+      "type": "object", "additionalProperties": false, "required": ["startMs", "endMs", "text"],
+      "properties": { "startMs": { "type": "number", "minimum": 0 }, "endMs": { "type": "number", "minimum": 0 }, "text": { "type": "string" } }
+    },
+    "sessionReady": {
+      "allOf": [{ "$ref": "#/$defs/base" }, {
+        "type": "object", "required": ["sessionId", "audio", "previewMs"],
+        "properties": { "type": { "const": "session.ready" }, "sessionId": { "type": "string", "format": "uuid" }, "audio": { "type": "object" }, "previewMs": { "type": "integer" } }
+      }]
+    },
+    "partial": {
+      "allOf": [{ "$ref": "#/$defs/base" }, {
+        "type": "object", "required": ["sessionId", "utteranceId", "revision", "text"],
+        "properties": { "type": { "const": "transcript.partial" }, "sessionId": { "type": "string", "format": "uuid" }, "utteranceId": { "type": "string", "format": "uuid" }, "revision": { "type": "integer", "minimum": 1 }, "text": { "type": "string" } }
+      }]
+    },
+    "final": {
+      "allOf": [{ "$ref": "#/$defs/base" }, {
+        "type": "object", "required": ["sessionId", "utteranceId", "text", "segments", "finalizationReason"],
+        "properties": { "type": { "const": "transcript.final" }, "sessionId": { "type": "string", "format": "uuid" }, "utteranceId": { "type": "string", "format": "uuid" }, "text": { "type": "string" }, "segments": { "type": "array", "items": { "$ref": "#/$defs/segment" } }, "finalizationReason": { "enum": ["pause", "flush", "stop", "rollover"] } }
+      }]
+    },
+    "empty": {
+      "allOf": [{ "$ref": "#/$defs/base" }, {
+        "type": "object", "required": ["sessionId", "utteranceId", "finalizationReason"],
+        "properties": { "type": { "const": "transcript.empty" }, "sessionId": { "type": "string", "format": "uuid" }, "utteranceId": { "type": "string", "format": "uuid" }, "finalizationReason": { "enum": ["pause", "flush", "stop", "rollover"] } }
+      }]
+    },
+    "error": {
+      "allOf": [{ "$ref": "#/$defs/base" }, {
+        "type": "object", "required": ["code", "message"],
+        "properties": { "type": { "const": "error" }, "code": { "type": "string" }, "message": { "type": "string" }, "details": {} }
+      }]
+    },
+    "closed": {
+      "allOf": [{ "$ref": "#/$defs/base" }, {
+        "type": "object", "required": ["sessionId", "reason"],
+        "properties": { "type": { "const": "session.closed" }, "sessionId": { "type": "string", "format": "uuid" }, "reason": { "type": "string" } }
+      }]
+    }
+  }
+}

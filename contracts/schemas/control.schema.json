@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sirgunther.github.io/WhisperService/schemas/control.schema.json",
+  "title": "Streaming control 1.0.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "type"],
+  "properties": {
+    "version": { "const": "1.0.0" },
+    "type": { "enum": ["flush", "stop", "cancel"] }
+  }
+}

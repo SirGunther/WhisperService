@@ -1,0 +1,10 @@
+node_modules/
+coverage/
+build/
+dist/
+*.log
+*.bin
+*.wav
+.env
+config.json
+credentials.json

@@ -1,0 +1,23 @@
+{
+  "name": "@sirgunther/whisper-service",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Windows-first private local Whisper transcription service",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node src/cli.mjs serve",
+    "setup": "node scripts/setup.mjs",
+    "configure": "node src/cli.mjs configure",
+    "token:show": "node src/cli.mjs token show",
+    "token:rotate": "node src/cli.mjs token rotate",
+    "test": "node --test --test-reporter=spec",
+    "smoke": "node scripts/smoke.mjs"
+  },
+  "dependencies": {
+    "busboy": "1.6.0",
+    "ws": "8.21.3"
+  }
+}
