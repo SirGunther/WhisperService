@@ -18,9 +18,6 @@ export const MODELS = Object.freeze({
     url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin'
   })
 });
-// Legacy constants kept for scripts/setup.mjs (EV-008) until WMODEL-02 removes them.
-export const MODEL_FILE = MODELS[DEFAULT_MODEL_ID].file;
-export const MODEL_SHA256 = MODELS[DEFAULT_MODEL_ID].sha256;
 export const WHISPER_CPP_TAG = 'v1.9.1';
 
 export const DEFAULTS = Object.freeze({

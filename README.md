@@ -1,6 +1,6 @@
 # WhisperService
 
-WhisperService is a private, manually started Windows transcription server for SaySlate and other local applications. A Node 22 gateway owns authentication, exact-origin CORS, WebSockets, audio/VAD state, and scheduling. A dedicated native worker owns one CPU-only English `base.en` model for the life of the server.
+WhisperService is a private, manually started Windows transcription server for SaySlate and other local applications. A Node 22 gateway owns authentication, exact-origin CORS, WebSockets, audio/VAD state, and scheduling. A dedicated native worker owns one CPU-only English Whisper model — `base.en` by default, or `small.en` (see [Change the model](#change-the-model)) — for the life of the server.
 
 The model is loaded once per server process—not once per dictation. Every inference creates and destroys a fresh native `whisper_state`, uses `no_context`, supplies no prompt, and receives isolated audio. Closing a session deletes its buffered audio, transcript state, revisions, and temporary WAV files while leaving only the model weights resident.
 
@@ -23,9 +23,9 @@ npm ci
 npm run setup
 ```
 
-Setup is idempotent. It creates `%LOCALAPPDATA%\WhisperService`, generates a 256-bit token, restricts the credentials file to the current Windows user, checks out whisper.cpp `v1.9.1` at commit `f049fff95a089aa9969deb009cdd4892b3e74916`, downloads `ggml-base.en.bin`, verifies SHA-256 `a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002`, and builds `whisper-worker.exe`.
+Setup is idempotent. It creates `%LOCALAPPDATA%\WhisperService`, generates a 256-bit token, restricts the credentials file to the current Windows user, checks out whisper.cpp `v1.9.1` at commit `f049fff95a089aa9969deb009cdd4892b3e74916`, downloads and verifies by SHA-256 whichever model is selected (`ggml-base.en.bin` by default), and builds `whisper-worker.exe`.
 
-For configuration-only development setup, use `node scripts/setup.mjs --config-only`. `--skip-model` and `--skip-build` are also available for CI/toolchain work.
+Pass `--model <id>` (`base.en` or `small.en`) to install a specific catalog model regardless of the current selection. For configuration-only development setup, use `node scripts/setup.mjs --config-only`. `--skip-model` and `--skip-build` are also available for CI/toolchain work.
 
 Register each browser origin exactly. SaySlate will use its actual extension origin:
 
@@ -44,6 +44,23 @@ npm run token:rotate
 ```
 
 Normal startup never prints the token.
+
+### Change the model
+
+Install the other model, switch to it, then restart:
+
+```powershell
+npm run setup -- --model small.en --skip-build
+npm run configure -- model small.en
+```
+
+Go back the same way:
+
+```powershell
+npm run configure -- model base.en
+```
+
+Restart WhisperService after either switch to load the newly selected model. To keep only one model installed, delete the other file from `%LOCALAPPDATA%\WhisperService\models`.
 
 ## Manual operation
 
@@ -104,4 +121,4 @@ Logs contain lifecycle IDs, durations, byte counts, queue timing, and error code
 
 ## Deliberate v1 exclusions
 
-There is no Windows service, startup task, tray application, UI, GPU tuning, alternate model/language, public bind, SaySlate code, or LM Studio integration in this repository.
+There is no Windows service, startup task, tray application, UI, GPU tuning, language other than English, public bind, SaySlate code, or LM Studio integration in this repository.

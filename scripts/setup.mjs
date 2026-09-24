@@ -6,12 +6,11 @@ import { dirname, join, resolve } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { Readable, Transform } from 'node:stream';
 import { spawn } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
-import { initializeUserFiles, servicePaths } from '../src/config.mjs';
-import { MODEL_SHA256, WHISPER_CPP_TAG } from '../src/constants.mjs';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { initializeUserFiles, loadConfig, modelIdForConfig, servicePaths } from '../src/config.mjs';
+import { MODELS, WHISPER_CPP_TAG } from '../src/constants.mjs';
 
 const WHISPER_CPP_COMMIT = 'f049fff95a089aa9969deb009cdd4892b3e74916';
-const MODEL_URL = 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin';
 const REPOSITORY_URL = 'https://github.com/ggml-org/whisper.cpp.git';
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -60,25 +59,43 @@ async function provisionSource(paths) {
   if (commit !== WHISPER_CPP_COMMIT) throw new Error(`whisper.cpp identity mismatch: expected ${WHISPER_CPP_COMMIT}, received ${commit}.`);
 }
 
-async function provisionModel(paths) {
-  if (await exists(paths.model)) {
-    if ((await hashFile(paths.model)).toLowerCase() === MODEL_SHA256) return;
+async function provisionModel(paths, modelId) {
+  const entry = MODELS[modelId];
+  const modelPath = join(paths.models, entry.file);
+  if (await exists(modelPath)) {
+    if ((await hashFile(modelPath)).toLowerCase() === entry.sha256) return;
     throw new Error('Existing model does not match the pinned SHA-256; remove it manually before retrying.');
   }
-  const temporary = `${paths.model}.download`;
-  await mkdir(dirname(paths.model), { recursive: true });
-  const response = await fetch(MODEL_URL, { redirect: 'follow' });
+  const temporary = `${modelPath}.download`;
+  await mkdir(dirname(modelPath), { recursive: true });
+  const response = await fetch(entry.url, { redirect: 'follow' });
   if (!response.ok || !response.body) throw new Error(`Model download failed with HTTP ${response.status}.`);
   const hash = createHash('sha256');
   try {
     await pipeline(Readable.fromWeb(response.body), new Transform({ transform(chunk, encoding, callback) { hash.update(chunk); callback(null, chunk); } }), createWriteStream(temporary, { flags: 'wx' }));
     const actual = hash.digest('hex');
-    if (actual !== MODEL_SHA256) throw new Error(`Model SHA-256 mismatch: expected ${MODEL_SHA256}, received ${actual}.`);
-    await rename(temporary, paths.model);
+    if (actual !== entry.sha256) throw new Error(`Model SHA-256 mismatch: expected ${entry.sha256}, received ${actual}.`);
+    await rename(temporary, modelPath);
   } catch (error) {
     await rm(temporary, { force: true });
     throw error;
   }
+}
+
+export function parseModelArg(argv) {
+  const index = argv.indexOf('--model');
+  if (index === -1) return undefined;
+  const value = argv[index + 1];
+  if (!value || !MODELS[value]) {
+    throw new Error(`--model requires one of: ${Object.keys(MODELS).join(', ')}.`);
+  }
+  return value;
+}
+
+export async function resolveModelId(explicitModelId, paths, catalog = MODELS) {
+  if (explicitModelId) return explicitModelId;
+  const config = await loadConfig(paths);
+  return modelIdForConfig(config, catalog);
 }
 
 async function buildWorker(paths) {
@@ -98,15 +115,16 @@ async function buildWorker(paths) {
   await copyFile(built, paths.worker);
 }
 
-export async function setup({ configOnly = false, skipModel = false, skipBuild = false } = {}) {
+export async function setup({ configOnly = false, skipModel = false, skipBuild = false, modelId } = {}) {
   const paths = await initializeUserFiles(servicePaths());
   console.log('User configuration and credentials are ready.');
   if (configOnly) return paths;
   await provisionSource(paths);
   console.log(`whisper.cpp ${WHISPER_CPP_TAG} identity verified.`);
   if (!skipModel) {
-    await provisionModel(paths);
-    console.log('ggml-base.en.bin identity verified.');
+    const resolvedModelId = await resolveModelId(modelId, paths);
+    await provisionModel(paths, resolvedModelId);
+    console.log(`${MODELS[resolvedModelId].file} identity verified.`);
   }
   if (!skipBuild) {
     await buildWorker(paths);
@@ -115,8 +133,16 @@ export async function setup({ configOnly = false, skipModel = false, skipBuild =
   return paths;
 }
 
-const args = new Set(process.argv.slice(2));
-setup({ configOnly: args.has('--config-only'), skipModel: args.has('--skip-model'), skipBuild: args.has('--skip-build') }).catch((error) => {
-  console.error(`Setup failed: ${error.message}`);
-  process.exitCode = 1;
-});
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const argv = process.argv.slice(2);
+  Promise.resolve()
+    .then(() => parseModelArg(argv))
+    .then((modelId) => {
+      const args = new Set(argv);
+      return setup({ configOnly: args.has('--config-only'), skipModel: args.has('--skip-model'), skipBuild: args.has('--skip-build'), modelId });
+    })
+    .catch((error) => {
+      console.error(`Setup failed: ${error.message}`);
+      process.exitCode = 1;
+    });
+}
