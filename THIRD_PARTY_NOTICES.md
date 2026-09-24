@@ -23,6 +23,14 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 The model is provisioned into the user's local application-data directory and is not redistributed by this repository.
 
+## ggml `small.en` model
+
+- File: `ggml-small.en.bin`
+- Provisioning source: https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin
+- SHA-256: `c6138d6d58ecc8322097e0f987c32f1be8bb0a18532a3f88f734d1bbf9c41e5d`
+
+The model is provisioned into the user's local application-data directory and is not redistributed by this repository.
+
 ## Node packages
 
 Runtime package identities and integrity hashes are recorded in `package-lock.json`. Their license metadata is available from `npm query .license` after installation.
