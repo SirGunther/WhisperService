@@ -5,6 +5,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { encodeWav, makeTonePcm } from '../src/audio.mjs';
+import { MODELS } from '../src/constants.mjs';
 import { WhisperService } from '../src/service.mjs';
 import { WhisperServiceClient } from '../clients/node.mjs';
 import { FakeWorker, silentLogger, testConfig, until } from './helpers.mjs';
@@ -54,6 +55,27 @@ test('HTTP and WebSocket contracts enforce auth, exact CORS, and explicit stream
     worker.fail(Object.assign(new Error('worker exited'), { code: 'WORKER_FAILURE' }));
     await fatal;
     await assert.rejects(() => client.health(), (error) => error.code === 'OFFLINE');
+  } finally {
+    await service.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('health falls back to the selected model file name when worker metadata omits it', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'whisper-http-model-'));
+  const config = testConfig(root);
+  config.runtime.modelPath = join(root, 'models', MODELS['small.en'].file);
+  config.runtime.modelSha256 = MODELS['small.en'].sha256;
+  const token = 'test-token-that-is-long-enough-for-http-only';
+  const worker = new FakeWorker();
+  delete worker.metadata.model;
+  const service = new WhisperService({ config, token, worker, tempDirectory: root, logger: silentLogger() });
+  try {
+    await service.start({ startWorker: false });
+    const response = await fetch('http://127.0.0.1:8178/v1/health', { headers: { Authorization: `Bearer ${token}` } });
+    assert.equal(response.status, 200);
+    const health = await response.json();
+    assert.equal(health.model, 'ggml-small.en.bin');
   } finally {
     await service.close();
     await rm(root, { recursive: true, force: true });

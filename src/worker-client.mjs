@@ -6,7 +6,7 @@ import { createInterface } from 'node:readline';
 import { EventEmitter } from 'node:events';
 import { ServiceError } from './errors.mjs';
 
-async function sha256(path) {
+export async function sha256(path) {
   const hash = createHash('sha256');
   await new Promise((resolve, reject) => createReadStream(path).on('data', (chunk) => hash.update(chunk)).on('end', resolve).on('error', reject));
   return hash.digest('hex');

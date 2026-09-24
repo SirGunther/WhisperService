@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { pathToFileURL } from 'node:url';
 import { createLogger } from './logger.mjs';
-import { loadConfig, loadToken, parseExactOrigin, rotateToken, saveConfig, servicePaths } from './config.mjs';
+import { loadConfig, loadToken, parseExactOrigin, rotateToken, saveConfig, selectModel, servicePaths } from './config.mjs';
 import { DEFAULTS } from './constants.mjs';
 import { WorkerClient } from './worker-client.mjs';
 import { WhisperService } from './service.mjs';
@@ -16,6 +16,7 @@ Commands:
   configure origin remove <exact-origin>
   configure origin list
   configure preview <1500-3000>
+  configure model <base.en|small.en>
   token show
   token rotate`);
 }
@@ -46,6 +47,12 @@ async function configure(args, paths) {
     config.speech.previewMs = preview;
     await saveConfig(config, paths);
     console.log(`Default preview cadence set to ${preview} ms.`);
+    return;
+  }
+  if (section === 'model' && action) {
+    const updated = await selectModel(config, action, paths);
+    await saveConfig(updated, paths);
+    console.log(`Model set to ${action}. Restart WhisperService to load it.`);
     return;
   }
   usage();

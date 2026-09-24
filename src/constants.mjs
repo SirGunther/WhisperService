@@ -5,8 +5,22 @@ export const PORT = 8178;
 export const SAMPLE_RATE = 16_000;
 export const CHANNELS = 1;
 export const BITS_PER_SAMPLE = 16;
-export const MODEL_FILE = 'ggml-base.en.bin';
-export const MODEL_SHA256 = 'a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002';
+export const DEFAULT_MODEL_ID = 'base.en';
+export const MODELS = Object.freeze({
+  'base.en': Object.freeze({
+    file: 'ggml-base.en.bin',
+    sha256: 'a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002',
+    url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin'
+  }),
+  'small.en': Object.freeze({
+    file: 'ggml-small.en.bin',
+    sha256: 'c6138d6d58ecc8322097e0f987c32f1be8bb0a18532a3f88f734d1bbf9c41e5d',
+    url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin'
+  })
+});
+// Legacy constants kept for scripts/setup.mjs (EV-008) until WMODEL-02 removes them.
+export const MODEL_FILE = MODELS[DEFAULT_MODEL_ID].file;
+export const MODEL_SHA256 = MODELS[DEFAULT_MODEL_ID].sha256;
 export const WHISPER_CPP_TAG = 'v1.9.1';
 
 export const DEFAULTS = Object.freeze({
