@@ -1,4 +1,5 @@
 import http from 'node:http';
+import { basename } from 'node:path';
 import { EventEmitter, once } from 'node:events';
 import { WebSocketServer } from 'ws';
 import { decodeWav } from './audio.mjs';
@@ -70,7 +71,7 @@ export class WhisperService extends EventEmitter {
           ready: this.started && this.worker.ready && !this.closing,
           serviceVersion: SERVICE_VERSION,
           protocolVersion: PROTOCOL_VERSION,
-          model: this.worker.metadata?.model || 'ggml-base.en.bin',
+          model: this.worker.metadata?.model || basename(this.config.runtime.modelPath),
           language: 'en',
           activeSessions: this.manager.activeCount,
           capabilities: {

@@ -1,10 +1,11 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { execFile } from 'node:child_process';
-import { chmod, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { access, chmod, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { basename, join, resolve } from 'node:path';
 import { promisify } from 'node:util';
-import { DEFAULTS, HOST, MODEL_FILE, MODEL_SHA256, PORT, PROTOCOL_VERSION, WHISPER_CPP_TAG } from './constants.mjs';
+import { DEFAULT_MODEL_ID, DEFAULTS, HOST, MODELS, PORT, PROTOCOL_VERSION, WHISPER_CPP_TAG } from './constants.mjs';
 import { ServiceError } from './errors.mjs';
+import { sha256 } from './worker-client.mjs';
 
 export function servicePaths(env = process.env) {
   const root = resolve(env.WHISPER_SERVICE_HOME || join(env.LOCALAPPDATA || '', 'WhisperService'));
@@ -20,7 +21,8 @@ export function servicePaths(env = process.env) {
     build: join(root, 'build'),
     temp: join(root, 'temp'),
     worker: join(root, 'runtime', 'whisper-worker.exe'),
-    model: join(root, 'models', MODEL_FILE)
+    models: join(root, 'models'),
+    model: join(root, 'models', MODELS[DEFAULT_MODEL_ID].file)
   });
 }
 
@@ -46,7 +48,7 @@ export function defaultConfig(paths = servicePaths()) {
     runtime: {
       workerPath: paths.worker,
       modelPath: paths.model,
-      modelSha256: MODEL_SHA256,
+      modelSha256: MODELS[DEFAULT_MODEL_ID].sha256,
       whisperCppTag: WHISPER_CPP_TAG
     }
   };
@@ -106,10 +108,38 @@ export function validateConfig(config) {
   if (config.speech.silenceRms >= config.speech.speechRms) {
     throw new ServiceError('INVALID_CONFIGURATION', 'speech.silenceRms must be lower than speech.speechRms.');
   }
-  if (!config.runtime?.workerPath || !config.runtime?.modelPath || config.runtime?.modelSha256?.toLowerCase() !== MODEL_SHA256 || config.runtime?.whisperCppTag !== WHISPER_CPP_TAG) {
+  if (!config.runtime?.workerPath || !config.runtime?.modelPath || !config.runtime?.modelSha256 || config.runtime?.whisperCppTag !== WHISPER_CPP_TAG) {
     throw new ServiceError('INVALID_CONFIGURATION', 'Runtime paths and model SHA-256 are required.');
   }
+  modelIdForConfig(config);
   return config;
+}
+
+export function modelIdForConfig(config, catalog = MODELS) {
+  const modelPath = config?.runtime?.modelPath;
+  const modelSha256 = config?.runtime?.modelSha256;
+  if (typeof modelPath !== 'string' || typeof modelSha256 !== 'string') {
+    throw new ServiceError('INVALID_CONFIGURATION', 'Runtime model path and SHA-256 are required.');
+  }
+  const file = basename(modelPath);
+  const id = Object.keys(catalog).find((candidate) => catalog[candidate].file === file && catalog[candidate].sha256 === modelSha256.toLowerCase());
+  if (!id) throw new ServiceError('INVALID_CONFIGURATION', 'The configured model is not a known, correctly pinned model.');
+  return id;
+}
+
+export async function selectModel(config, modelId, paths = servicePaths(), catalog = MODELS) {
+  const entry = catalog[modelId];
+  if (!entry) {
+    throw new ServiceError('INVALID_CONFIGURATION', `Unknown model id ${modelId}. Valid ids: ${Object.keys(catalog).join(', ')}.`);
+  }
+  const modelPath = join(paths.models, entry.file);
+  try { await access(modelPath); }
+  catch { throw new ServiceError('INVALID_CONFIGURATION', `${entry.file} is not installed. Run npm run setup -- --model ${modelId} to install it.`); }
+  const actual = await sha256(modelPath);
+  if (actual.toLowerCase() !== entry.sha256.toLowerCase()) {
+    throw new ServiceError('INVALID_CONFIGURATION', `${entry.file} does not match the pinned SHA-256 for ${modelId}. Run npm run setup -- --model ${modelId} to reinstall it.`);
+  }
+  return { ...config, runtime: { ...config.runtime, modelPath, modelSha256: entry.sha256 } };
 }
 
 async function atomicJson(path, value) {
