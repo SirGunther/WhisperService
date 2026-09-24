@@ -27,23 +27,6 @@ Setup is idempotent. It creates `%LOCALAPPDATA%\WhisperService`, generates a 256
 
 Pass `--model <id>` (`base.en` or `small.en`) to install a specific catalog model regardless of the current selection. For configuration-only development setup, use `node scripts/setup.mjs --config-only`. `--skip-model` and `--skip-build` are also available for CI/toolchain work.
 
-### Change the model
-
-Install the other model, switch to it, then restart:
-
-```powershell
-npm run setup -- --model small.en --skip-build
-npm run configure -- model small.en
-```
-
-Go back the same way:
-
-```powershell
-npm run configure -- model base.en
-```
-
-Restart WhisperService after either switch to load the newly selected model. To keep only one model installed, delete the other file from `%LOCALAPPDATA%\WhisperService\models`.
-
 Register each browser origin exactly. SaySlate will use its actual extension origin:
 
 ```powershell
@@ -61,6 +44,23 @@ npm run token:rotate
 ```
 
 Normal startup never prints the token.
+
+### Change the model
+
+Install the other model, switch to it, then restart:
+
+```powershell
+npm run setup -- --model small.en --skip-build
+npm run configure -- model small.en
+```
+
+Go back the same way:
+
+```powershell
+npm run configure -- model base.en
+```
+
+Restart WhisperService after either switch to load the newly selected model. To keep only one model installed, delete the other file from `%LOCALAPPDATA%\WhisperService\models`.
 
 ## Manual operation
 
