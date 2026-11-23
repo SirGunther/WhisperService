@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { MODELS } from '../src/constants.mjs';
 import { createLogger } from '../src/logger.mjs';
-import { defaultConfig, initializeUserFiles, loadToken, modelIdForConfig, parseExactOrigin, rotateToken, selectModel, servicePaths, tokenMatches, validateConfig } from '../src/config.mjs';
+import { defaultConfig, deviceForConfig, initializeUserFiles, loadToken, modelIdForConfig, parseExactOrigin, rotateToken, selectModel, servicePaths, tokenMatches, validateConfig } from '../src/config.mjs';
 
 test('default configuration preserves the approved bounds', () => {
   const paths = servicePaths({ WHISPER_SERVICE_HOME: join(tmpdir(), 'whisper-config') });
@@ -119,4 +119,50 @@ test('logger allowlist cannot leak tokens, transcript text, audio, or paths', ()
   assert(!output[0].includes('private transcript'));
   assert(!output[0].includes('private.wav'));
   assert.match(output[0], /session/);
+});
+
+test('the catalog pins every full-size English-capable model by file name, SHA-256 and source URL', () => {
+  assert.deepEqual(Object.keys(MODELS), ['tiny.en', 'base.en', 'small.en', 'medium.en', 'large-v1', 'large-v2', 'large-v3', 'large-v3-turbo']);
+  for (const [id, entry] of Object.entries(MODELS)) {
+    assert.equal(entry.file, `ggml-${id}.bin`);
+    assert.match(entry.sha256, /^[a-f0-9]{64}$/);
+    assert.equal(entry.url, `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-${id}.bin`);
+    assert(Object.isFrozen(entry));
+  }
+  assert.equal(new Set(Object.values(MODELS).map((entry) => entry.sha256)).size, Object.keys(MODELS).length);
+  assert.equal(MODELS['base.en'].sha256, 'a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002');
+  assert.equal(MODELS['small.en'].sha256, 'c6138d6d58ecc8322097e0f987c32f1be8bb0a18532a3f88f734d1bbf9c41e5d');
+});
+
+test('validateConfig resolves every catalog model from its file and hash', () => {
+  const paths = servicePaths({ WHISPER_SERVICE_HOME: join(tmpdir(), 'whisper-config-catalog') });
+  for (const [id, entry] of Object.entries(MODELS)) {
+    const config = defaultConfig(paths);
+    config.runtime.modelPath = join(paths.models, entry.file);
+    config.runtime.modelSha256 = entry.sha256;
+    assert.equal(modelIdForConfig(validateConfig(config)), id);
+  }
+});
+
+test('runtime.device defaults to auto, accepts auto, cpu and gpu, and rejects anything else', () => {
+  const paths = servicePaths({ WHISPER_SERVICE_HOME: join(tmpdir(), 'whisper-config-device') });
+  const config = defaultConfig(paths);
+  assert.equal(config.runtime.device, 'auto');
+  for (const device of ['auto', 'cpu', 'gpu']) {
+    config.runtime.device = device;
+    assert.equal(deviceForConfig(validateConfig(config)), device);
+  }
+  for (const device of ['cuda', 'GPU', '', null, 1]) {
+    config.runtime.device = device;
+    assert.throws(() => validateConfig(config), /runtime\.device must be one of: auto, cpu, gpu/);
+  }
+});
+
+test('a configuration written before runtime.device existed stays valid and means auto', () => {
+  const paths = servicePaths({ WHISPER_SERVICE_HOME: join(tmpdir(), 'whisper-config-legacy') });
+  const legacy = defaultConfig(paths);
+  delete legacy.runtime.device;
+  assert.equal(validateConfig(legacy), legacy);
+  assert.equal(deviceForConfig(legacy), 'auto');
+  assert.equal('device' in legacy.runtime, false);
 });

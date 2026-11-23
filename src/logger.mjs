@@ -1,7 +1,7 @@
 const ALLOWED = new Set([
   'event', 'level', 'serviceVersion', 'protocolVersion', 'sessionId', 'utteranceId',
   'reason', 'code', 'durationMs', 'queueMs', 'inferenceMs', 'activeSessions',
-  'revision', 'bytes', 'ready', 'model', 'language'
+  'revision', 'bytes', 'ready', 'model', 'language', 'device', 'deviceName'
 ]);
 
 export function createLogger(sink = console) {

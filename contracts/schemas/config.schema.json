@@ -38,7 +38,8 @@
         "workerPath": { "type": "string", "minLength": 1 },
         "modelPath": { "type": "string", "minLength": 1 },
         "modelSha256": { "type": "string", "pattern": "^[a-fA-F0-9]{64}$" },
-        "whisperCppTag": { "const": "v1.9.1" }
+        "whisperCppTag": { "const": "v1.9.1" },
+        "device": { "enum": ["auto", "cpu", "gpu"], "default": "auto" }
       }
     }
   }

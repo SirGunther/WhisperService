@@ -98,10 +98,23 @@ export async function resolveModelId(explicitModelId, paths, catalog = MODELS) {
   return modelIdForConfig(config, catalog);
 }
 
-async function buildWorker(paths) {
+// GGML_VULKAN is always passed explicitly so a reused build directory never keeps a stale backend choice.
+export function cmakeConfigureArgs({ sourceDir, buildDir, nativeDir = join(projectRoot, 'native'), vulkanSdk, cpuOnly = false }) {
+  const vulkan = Boolean(vulkanSdk) && !cpuOnly;
+  return {
+    vulkan,
+    args: ['-S', nativeDir, '-B', buildDir, `-DWHISPER_CPP_SOURCE_DIR=${sourceDir}`, '-DCMAKE_BUILD_TYPE=Release', `-DGGML_VULKAN=${vulkan ? 'ON' : 'OFF'}`]
+  };
+}
+
+async function buildWorker(paths, { cpuOnly = false } = {}) {
   const cmake = await findCmake();
   await mkdir(paths.build, { recursive: true });
-  await run(cmake, ['-S', join(projectRoot, 'native'), '-B', paths.build, `-DWHISPER_CPP_SOURCE_DIR=${paths.source}`, '-DCMAKE_BUILD_TYPE=Release']);
+  const configure = cmakeConfigureArgs({ sourceDir: paths.source, buildDir: paths.build, vulkanSdk: process.env.VULKAN_SDK, cpuOnly });
+  console.log(configure.vulkan
+    ? `Building whisper-worker.exe with the Vulkan GPU backend (VULKAN_SDK=${process.env.VULKAN_SDK}).`
+    : `Building a CPU-only whisper-worker.exe (${cpuOnly ? '--cpu-only' : 'VULKAN_SDK is not set'}).`);
+  await run(cmake, configure.args);
   await run(cmake, ['--build', paths.build, '--config', 'Release', '--target', 'whisper-worker']);
   const candidates = [
     join(paths.build, 'bin', 'Release', 'whisper-worker.exe'),
@@ -115,7 +128,7 @@ async function buildWorker(paths) {
   await copyFile(built, paths.worker);
 }
 
-export async function setup({ configOnly = false, skipModel = false, skipBuild = false, modelId } = {}) {
+export async function setup({ configOnly = false, skipModel = false, skipBuild = false, cpuOnly = false, modelId } = {}) {
   const paths = await initializeUserFiles(servicePaths());
   console.log('User configuration and credentials are ready.');
   if (configOnly) return paths;
@@ -127,7 +140,7 @@ export async function setup({ configOnly = false, skipModel = false, skipBuild =
     console.log(`${MODELS[resolvedModelId].file} identity verified.`);
   }
   if (!skipBuild) {
-    await buildWorker(paths);
+    await buildWorker(paths, { cpuOnly });
     console.log('whisper-worker.exe built and installed.');
   }
   return paths;
@@ -139,7 +152,7 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
     .then(() => parseModelArg(argv))
     .then((modelId) => {
       const args = new Set(argv);
-      return setup({ configOnly: args.has('--config-only'), skipModel: args.has('--skip-model'), skipBuild: args.has('--skip-build'), modelId });
+      return setup({ configOnly: args.has('--config-only'), skipModel: args.has('--skip-model'), skipBuild: args.has('--skip-build'), cpuOnly: args.has('--cpu-only'), modelId });
     })
     .catch((error) => {
       console.error(`Setup failed: ${error.message}`);

@@ -39,7 +39,7 @@ export class WhisperService extends EventEmitter {
   async start({ startWorker = true, verifyAssets = true } = {}) {
     if (startWorker) await this.worker.start({ verifyAssets });
     if (!this.worker.ready) throw new ServiceError('WORKER_FAILURE', 'The native worker did not become ready.');
-    this.logger.info('worker.ready', { ready: true, model: this.worker.metadata?.model, language: 'en' });
+    this.logger.info('worker.ready', { ready: true, model: this.worker.metadata?.model, language: 'en', device: this.worker.metadata?.device, deviceName: this.worker.metadata?.deviceName });
     try {
       this.http.listen({ host: HOST, port: PORT });
       await once(this.http, 'listening');

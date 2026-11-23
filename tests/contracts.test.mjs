@@ -21,3 +21,10 @@ test('OpenAPI publishes each required operation and WebSocket events', async () 
     assert.match(openapi, new RegExp(value.replace(/[{}]/g, '\\$&')));
   }
 });
+
+test('the configuration schema allows an optional runtime.device of auto, cpu or gpu', async () => {
+  const path = join(dirname(fileURLToPath(import.meta.url)), '..', 'contracts', 'schemas', 'config.schema.json');
+  const schema = JSON.parse(await readFile(path, 'utf8'));
+  assert.deepEqual(schema.properties.runtime.properties.device.enum, ['auto', 'cpu', 'gpu']);
+  assert.equal(schema.properties.runtime.required.includes('device'), false);
+});
