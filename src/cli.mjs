@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 import { pathToFileURL } from 'node:url';
 import { createLogger } from './logger.mjs';
-import { loadConfig, loadToken, parseExactOrigin, rotateToken, saveConfig, selectModel, servicePaths } from './config.mjs';
-import { DEFAULTS } from './constants.mjs';
+import { deviceForConfig, loadConfig, loadToken, parseDevice, parseExactOrigin, rotateToken, saveConfig, selectModel, servicePaths } from './config.mjs';
+import { DEFAULTS, DEVICES, MODELS } from './constants.mjs';
 import { WorkerClient } from './worker-client.mjs';
 import { WhisperService } from './service.mjs';
 
-function usage() {
-  console.log(`WhisperService 1.0.0
+export function usageText() {
+  return `WhisperService 1.0.0
 
 Commands:
   serve
@@ -16,9 +16,14 @@ Commands:
   configure origin remove <exact-origin>
   configure origin list
   configure preview <1500-3000>
-  configure model <base.en|small.en>
+  configure model <${Object.keys(MODELS).join('|')}>
+  configure device <${DEVICES.join('|')}>
   token show
-  token rotate`);
+  token rotate`;
+}
+
+function usage() {
+  console.log(usageText());
 }
 
 async function configure(args, paths) {
@@ -55,6 +60,12 @@ async function configure(args, paths) {
     console.log(`Model set to ${action}. Restart WhisperService to load it.`);
     return;
   }
+  if (section === 'device' && action) {
+    config.runtime = { ...config.runtime, device: parseDevice(action) };
+    await saveConfig(config, paths);
+    console.log(`Device set to ${action}. Restart WhisperService to apply it.`);
+    return;
+  }
   usage();
   process.exitCode = 2;
 }
@@ -87,6 +98,7 @@ export async function main(argv = process.argv.slice(2)) {
     workerPath: config.runtime.workerPath,
     modelPath: config.runtime.modelPath,
     modelSha256: config.runtime.modelSha256,
+    device: deviceForConfig(config),
     startupMs: DEFAULTS.workerStartupMs
   });
   const service = new WhisperService({ config, token, worker, tempDirectory: paths.temp, logger });

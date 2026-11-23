@@ -1,5 +1,7 @@
 import { createInterface } from 'node:readline';
 
+const exitIndex = process.argv.indexOf('--exit-code');
+if (exitIndex !== -1) process.exit(Number(process.argv[exitIndex + 1]));
 const ready = Buffer.from(JSON.stringify({ protocolVersion: '1.0.0', model: 'ggml-base.en.bin', language: 'en' })).toString('base64url');
 console.log(`READY ${ready}`);
 const lines = createInterface({ input: process.stdin, crlfDelay: Infinity });

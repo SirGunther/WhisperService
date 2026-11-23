@@ -17,15 +17,29 @@ function decodeJson(encoded) {
   catch { throw new ServiceError('MALFORMED_INFERENCE_OUTPUT', 'The worker returned malformed inference output.'); }
 }
 
+// Exit codes whisper-worker.exe uses before READY (native/whisper-worker.cpp).
+const STARTUP_EXIT_MESSAGES = Object.freeze({
+  2: 'Native worker rejected its arguments.',
+  3: 'Native worker could not load the model on the selected device.',
+  4: 'No GPU device is available and runtime.device is gpu. Run npm run configure -- device auto (or cpu) and restart.'
+});
+
+export function workerExitMessage(code, signal, { ready = false } = {}) {
+  if (signal) return `Native worker exited with signal ${signal}.`;
+  if (!ready && STARTUP_EXIT_MESSAGES[code]) return `${STARTUP_EXIT_MESSAGES[code]} (exit code ${code})`;
+  return `Native worker exited with code ${code}.`;
+}
+
 export class WorkerClient extends EventEmitter {
-  constructor({ workerPath, modelPath, modelSha256, startupMs, command, args = [] }) {
+  constructor({ workerPath, modelPath, modelSha256, startupMs, device = 'auto', command, args = [] }) {
     super();
     this.workerPath = workerPath;
     this.modelPath = modelPath;
     this.modelSha256 = modelSha256;
     this.startupMs = startupMs;
+    this.device = device;
     this.command = command || workerPath;
-    this.args = command ? args : ['--model', modelPath];
+    this.args = command ? args : ['--model', modelPath, '--device', device];
     this.process = null;
     this.ready = false;
     this.metadata = null;
@@ -52,9 +66,10 @@ export class WorkerClient extends EventEmitter {
     child.once('error', (error) => this.#fail(new ServiceError('WORKER_FAILURE', `Native worker could not start: ${error.message}`)));
     child.once('exit', (code, signal) => {
       const expected = this.expectedExit;
+      const wasReady = this.ready;
       this.ready = false;
       this.process = null;
-      const error = new ServiceError('WORKER_FAILURE', `Native worker exited${signal ? ` with signal ${signal}` : ` with code ${code}`}.`);
+      const error = new ServiceError('WORKER_FAILURE', workerExitMessage(code, signal, { ready: wasReady }));
       for (const pending of this.pending.values()) pending.reject(error);
       this.pending.clear();
       if (!expected) this.emit('failure', error);

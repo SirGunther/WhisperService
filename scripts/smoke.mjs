@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 import { access, readFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawn } from 'node:child_process';
 import { decodeWav } from '../src/audio.mjs';
-import { loadConfig, loadToken, servicePaths } from '../src/config.mjs';
+import { deviceForConfig, loadConfig, loadToken, servicePaths } from '../src/config.mjs';
 import { DEFAULTS } from '../src/constants.mjs';
 import { createLogger } from '../src/logger.mjs';
 import { WhisperService } from '../src/service.mjs';
@@ -12,7 +12,13 @@ import { WorkerClient } from '../src/worker-client.mjs';
 import { WhisperServiceClient } from '../clients/node.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const defaultFixture = join(root, 'tests', 'fixtures', 'english.wav');
+export const defaultFixture = join(root, 'tests', 'fixtures', 'english.wav');
+// The sentence scripts/create-smoke-fixture.ps1 synthesizes into the default fixture.
+export const DEFAULT_FIXTURE_TEXT = 'The quick brown fox jumps over the lazy dog.';
+// A longer fixture for timing one full utterance: distinct words, because some models collapse repeated speech.
+export const utteranceFixture = join(root, 'tests', 'fixtures', 'english-utterance.wav');
+export const UTTERANCE_FIXTURE_TEXT = 'The quick brown fox jumps over the lazy dog. Please call Stella and ask her to bring these things with her from the store.';
+const SYNTHESIZED_FIXTURES = Object.freeze({ [defaultFixture]: DEFAULT_FIXTURE_TEXT, [utteranceFixture]: UTTERANCE_FIXTURE_TEXT });
 
 function run(command, args) {
   return new Promise((resolvePromise, reject) => {
@@ -22,11 +28,12 @@ function run(command, args) {
   });
 }
 
-async function ensureFixture(path) {
+export async function ensureFixture(path) {
   try { await access(path); }
   catch {
-    if (path !== defaultFixture) throw new Error(`Smoke WAV does not exist: ${path}`);
-    await run('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', join(root, 'scripts', 'create-smoke-fixture.ps1')]);
+    const text = SYNTHESIZED_FIXTURES[path];
+    if (!text) throw new Error(`Smoke WAV does not exist: ${path}`);
+    await run('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', join(root, 'scripts', 'create-smoke-fixture.ps1'), '-Path', path, '-Text', text]);
   }
 }
 
@@ -54,7 +61,7 @@ async function main() {
   const paths = servicePaths();
   const config = await loadConfig(paths);
   const token = await loadToken(paths);
-  const worker = new WorkerClient({ workerPath: config.runtime.workerPath, modelPath: config.runtime.modelPath, modelSha256: config.runtime.modelSha256, startupMs: DEFAULTS.workerStartupMs });
+  const worker = new WorkerClient({ workerPath: config.runtime.workerPath, modelPath: config.runtime.modelPath, modelSha256: config.runtime.modelSha256, device: deviceForConfig(config), startupMs: DEFAULTS.workerStartupMs });
   let modelInitializations = 0;
   worker.on('ready', () => { modelInitializations += 1; });
   const service = new WhisperService({ config, token, worker, tempDirectory: paths.temp, logger: createLogger() });
@@ -72,7 +79,9 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error(`Smoke test failed: ${error.message}`);
-  process.exitCode = 1;
-});
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((error) => {
+    console.error(`Smoke test failed: ${error.message}`);
+    process.exitCode = 1;
+  });
+}

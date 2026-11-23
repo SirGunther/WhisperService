@@ -1,7 +1,9 @@
 #include "whisper.h"
+#include "ggml-backend.h"
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <cstdint>
 #include <cstring>
 #include <fstream>
@@ -132,28 +134,71 @@ std::string basename(const std::string & path) {
     return position == std::string::npos ? path : path.substr(position + 1);
 }
 
+struct gpu_device {
+    bool found = false;
+    std::string name;
+};
+
+// The device whisper itself picks for gpu_device = 0: the first GPU or integrated GPU in ggml's registry order.
+gpu_device first_gpu_device() {
+    for (std::size_t index = 0; index < ggml_backend_dev_count(); ++index) {
+        ggml_backend_dev_t device = ggml_backend_dev_get(index);
+        const auto type = ggml_backend_dev_type(device);
+        if (type == GGML_BACKEND_DEVICE_TYPE_GPU || type == GGML_BACKEND_DEVICE_TYPE_IGPU) {
+            return { true, std::string(ggml_backend_dev_name(device)) + " " + ggml_backend_dev_description(device) };
+        }
+    }
+    return {};
+}
+
+long long elapsed_ms(std::chrono::steady_clock::time_point started, std::chrono::steady_clock::time_point finished) {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(finished - started).count();
+}
+
 } // namespace
 
 int main(int argc, char ** argv) {
     std::string model_path;
+    std::string device_mode = "auto";
     for (int index = 1; index < argc; ++index) {
-        if (std::string(argv[index]) == "--model" && index + 1 < argc) model_path = argv[++index];
+        const std::string argument = argv[index];
+        if (argument == "--model" && index + 1 < argc) model_path = argv[++index];
+        else if (argument == "--device" && index + 1 < argc) device_mode = argv[++index];
     }
     if (model_path.empty()) {
         std::cerr << "A model path is required.\n";
         return 2;
     }
+    if (device_mode != "auto" && device_mode != "cpu" && device_mode != "gpu") {
+        std::cerr << "--device must be auto, cpu, or gpu.\n";
+        return 2;
+    }
 
     whisper_log_set(quiet_log, nullptr);
+    const gpu_device gpu = device_mode == "cpu" ? gpu_device{} : first_gpu_device();
+    if (device_mode == "gpu" && !gpu.found) {
+        std::cerr << "No GPU device is available.\n";
+        return 4;
+    }
     auto context_parameters = whisper_context_default_params();
-    context_parameters.use_gpu = false;
+    context_parameters.use_gpu = gpu.found;
+    bool on_gpu = gpu.found;
     whisper_context * context = whisper_init_from_file_with_params_no_state(model_path.c_str(), context_parameters);
+    if (context == nullptr && on_gpu && device_mode == "auto") {
+        // whisper does not fall back to the CPU when the GPU device fails to initialize during model load.
+        std::cerr << "The Whisper model could not be loaded on the GPU; retrying on the CPU.\n";
+        context_parameters.use_gpu = false;
+        on_gpu = false;
+        context = whisper_init_from_file_with_params_no_state(model_path.c_str(), context_parameters);
+    }
     if (context == nullptr) {
         std::cerr << "The Whisper model could not be loaded.\n";
         return 3;
     }
 
-    const std::string ready = "{\"protocolVersion\":\"1.0.0\",\"model\":\"" + json_escape(basename(model_path)) + "\",\"language\":\"en\"}";
+    const std::string ready = "{\"protocolVersion\":\"1.0.0\",\"model\":\"" + json_escape(basename(model_path)) +
+                              "\",\"language\":\"en\",\"device\":\"" + (on_gpu ? "gpu" : "cpu") +
+                              "\",\"deviceName\":\"" + json_escape(on_gpu ? gpu.name : "CPU") + "\"}";
     std::cout << "READY " << base64url_encode(ready) << '\n' << std::flush;
 
     std::string line;
@@ -197,15 +242,20 @@ int main(int argc, char ** argv) {
         parameters.prompt_tokens = nullptr;
         parameters.prompt_n_tokens = 0;
 
+        const auto state_started = std::chrono::steady_clock::now();
         whisper_state * state = whisper_init_state(context);
+        const auto state_ready = std::chrono::steady_clock::now();
         if (state == nullptr) {
             std::fill(samples.begin(), samples.end(), 0.0F);
             write_error(id, "WORKER_FAILURE", "A fresh Whisper inference state could not be created.");
             continue;
         }
-        if (whisper_full_with_state(context, state, parameters, samples.data(), static_cast<int>(samples.size())) != 0) {
+        const int status = whisper_full_with_state(context, state, parameters, samples.data(), static_cast<int>(samples.size()));
+        const auto inference_done = std::chrono::steady_clock::now();
+        if (status != 0) {
             std::fill(samples.begin(), samples.end(), 0.0F);
-            whisper_free_state(state);
+            // whisper v1.9.1 frees the state itself before returning -7 (KV cache reallocation failed).
+            if (status != -7) whisper_free_state(state);
             write_error(id, "WORKER_FAILURE", "Whisper inference failed.");
             continue;
         }
@@ -222,7 +272,8 @@ int main(int argc, char ** argv) {
                  << ",\"endMs\":" << whisper_full_get_segment_t1_from_state(state, segment) * 10
                  << ",\"text\":\"" << json_escape(whisper_full_get_segment_text_from_state(state, segment)) << "\"}";
         }
-        json << "]}";
+        json << "],\"timing\":{\"stateMs\":" << elapsed_ms(state_started, state_ready)
+             << ",\"fullMs\":" << elapsed_ms(state_ready, inference_done) << "}}";
         std::fill(samples.begin(), samples.end(), 0.0F);
         whisper_free_state(state);
         std::cout << "RESULT " << id << ' ' << base64url_encode(json.str()) << '\n' << std::flush;

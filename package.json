@@ -14,7 +14,8 @@
     "token:show": "node src/cli.mjs token show",
     "token:rotate": "node src/cli.mjs token rotate",
     "test": "node --test --test-reporter=spec",
-    "smoke": "node scripts/smoke.mjs"
+    "smoke": "node scripts/smoke.mjs",
+    "smoke:models": "node scripts/smoke-models.mjs"
   },
   "dependencies": {
     "busboy": "1.6.0",
