@@ -1,14 +1,11 @@
 #!/usr/bin/env node
-import { createHash } from 'node:crypto';
-import { createReadStream, createWriteStream } from 'node:fs';
-import { access, copyFile, mkdir, rename, rm } from 'node:fs/promises';
+import { access, copyFile, mkdir } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
-import { pipeline } from 'node:stream/promises';
-import { Readable, Transform } from 'node:stream';
 import { spawn } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { initializeUserFiles, loadConfig, modelIdForConfig, servicePaths } from '../src/config.mjs';
 import { MODELS, WHISPER_CPP_TAG } from '../src/constants.mjs';
+import { installModel, progressPrinter } from '../src/models.mjs';
 
 const WHISPER_CPP_COMMIT = 'f049fff95a089aa9969deb009cdd4892b3e74916';
 const REPOSITORY_URL = 'https://github.com/ggml-org/whisper.cpp.git';
@@ -22,12 +19,6 @@ function run(command, args, options = {}) {
     child.once('error', reject);
     child.once('exit', (code) => code === 0 ? resolvePromise(stdout.trim()) : reject(new Error(`${command} exited with code ${code}.`)));
   });
-}
-
-async function hashFile(path) {
-  const hash = createHash('sha256');
-  await pipeline(createReadStream(path), new Transform({ transform(chunk, encoding, callback) { hash.update(chunk); callback(null, chunk); } }), new Transform({ transform(chunk, encoding, callback) { callback(); } }));
-  return hash.digest('hex');
 }
 
 async function exists(path) {
@@ -57,29 +48,6 @@ async function provisionSource(paths) {
   }
   const commit = await run('git', ['-C', paths.source, 'rev-parse', 'HEAD'], { capture: true });
   if (commit !== WHISPER_CPP_COMMIT) throw new Error(`whisper.cpp identity mismatch: expected ${WHISPER_CPP_COMMIT}, received ${commit}.`);
-}
-
-async function provisionModel(paths, modelId) {
-  const entry = MODELS[modelId];
-  const modelPath = join(paths.models, entry.file);
-  if (await exists(modelPath)) {
-    if ((await hashFile(modelPath)).toLowerCase() === entry.sha256) return;
-    throw new Error('Existing model does not match the pinned SHA-256; remove it manually before retrying.');
-  }
-  const temporary = `${modelPath}.download`;
-  await mkdir(dirname(modelPath), { recursive: true });
-  const response = await fetch(entry.url, { redirect: 'follow' });
-  if (!response.ok || !response.body) throw new Error(`Model download failed with HTTP ${response.status}.`);
-  const hash = createHash('sha256');
-  try {
-    await pipeline(Readable.fromWeb(response.body), new Transform({ transform(chunk, encoding, callback) { hash.update(chunk); callback(null, chunk); } }), createWriteStream(temporary, { flags: 'wx' }));
-    const actual = hash.digest('hex');
-    if (actual !== entry.sha256) throw new Error(`Model SHA-256 mismatch: expected ${entry.sha256}, received ${actual}.`);
-    await rename(temporary, modelPath);
-  } catch (error) {
-    await rm(temporary, { force: true });
-    throw error;
-  }
 }
 
 export function parseModelArg(argv) {
@@ -136,7 +104,7 @@ export async function setup({ configOnly = false, skipModel = false, skipBuild =
   console.log(`whisper.cpp ${WHISPER_CPP_TAG} identity verified.`);
   if (!skipModel) {
     const resolvedModelId = await resolveModelId(modelId, paths);
-    await provisionModel(paths, resolvedModelId);
+    if (await installModel(paths.models, resolvedModelId, { onProgress: progressPrinter() }) && process.stdout.isTTY) process.stdout.write('\n');
     console.log(`${MODELS[resolvedModelId].file} identity verified.`);
   }
   if (!skipBuild) {

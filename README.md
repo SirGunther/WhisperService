@@ -1,6 +1,6 @@
 # WhisperService
 
-WhisperService is a private, manually started Windows transcription server for SaySlate and other local applications. A Node 22 gateway owns authentication, exact-origin CORS, WebSockets, audio/VAD state, and scheduling. A dedicated native worker owns one English Whisper model — `base.en` by default, or any other catalog model (see [Change the model](#change-the-model)) — for the life of the server, on the GPU when one is available (see [Choose the device](#choose-the-device)) or on the CPU.
+WhisperService is a private, manually started Windows transcription server for SaySlate and other local applications. A Node 22 gateway owns authentication, exact-origin CORS, WebSockets, audio/VAD state, and scheduling. A dedicated native worker owns one English Whisper model — `base.en` by default, or any other catalog model (see [Choose the model](#choose-the-model)) — for the life of the server. It runs on the GPU when there is one and on the CPU otherwise, with nothing to configure (see [GPU](#gpu)).
 
 The model is loaded once per server process—not once per dictation. Every inference creates and destroys a fresh native `whisper_state`, uses `no_context`, supplies no prompt, and receives isolated audio. Closing a session deletes its buffered audio, transcript state, revisions, and temporary WAV files while leaving only the model weights resident.
 
@@ -46,9 +46,15 @@ npm run token:rotate
 
 Normal startup never prints the token.
 
-### Change the model
+### Choose the model
 
-The catalog holds every full-size English-capable whisper.cpp model, each pinned by SHA-256:
+Name the model when you start the service:
+
+```powershell
+npm start large-v3-turbo
+```
+
+If the model isn't installed yet, it is downloaded and verified by SHA-256 first. The choice is remembered, so a plain `npm start` keeps using it until you name another one. To go back, run `npm start base.en`. Stop the running service (`Ctrl+C`) before starting it with a different model.
 
 | Model | Download |
 | --- | --- |
@@ -59,44 +65,34 @@ The catalog holds every full-size English-capable whisper.cpp model, each pinned
 | `large-v1`, `large-v2`, `large-v3` | 3.1 GB each |
 | `large-v3-turbo` | 1.6 GB |
 
-The `large-*` models are multilingual; WhisperService still forces English. Install a model, switch to it, then restart:
+`base.en` keeps up on any recent CPU. A GPU lets the bigger models run, but a bigger model makes text arrive later. Measured on a GTX 1080 Ti with a 1,500 ms preview interval, from when you stop talking until the whole phrase is on screen, then until the final:
 
-```powershell
-npm run setup -- --model large-v3-turbo --skip-build
-npm run configure -- model large-v3-turbo
+| Model | Phrase on screen | Final |
+| --- | --- | --- |
+| `base.en` on the CPU | 1.7 s | 2.4 s |
+| `small.en` | 1.3 s | 1.8 s |
+| `medium.en` | 2.0 s | 3.0 s |
+| `large-v3-turbo` | 2.5 s | 4.0 s |
+
+Run `npm run smoke:models` to measure your own machine. The `large-*` models are multilingual, but WhisperService still forces English. To free space, delete unused files from `%LOCALAPPDATA%\WhisperService\models`.
+
+### GPU
+
+There is nothing to set. If the [Vulkan SDK](https://vulkan.lunarg.com/sdk/home) is installed when you run `npm run setup`, the worker is built with GPU support. At startup it uses the GPU if it finds one, and the CPU if it doesn't. If the model fails to load on the GPU, it loads on the CPU instead. On a machine with no GPU, or without the SDK, everything runs on the CPU. The startup line says which one it's using:
+
+```text
+WhisperService is ready: large-v3-turbo on the GPU (Vulkan0 NVIDIA GeForce GTX 1080 Ti), at http://127.0.0.1:8178. Press Ctrl+C to stop.
 ```
 
-Go back the same way:
+To keep the GPU free for one run, start with `$env:GGML_DISABLE_VULKAN = 1; npm start`.
 
-```powershell
-npm run configure -- model base.en
-```
-
-Restart WhisperService after a switch to load the newly selected model. To free space, delete unused files from `%LOCALAPPDATA%\WhisperService\models`.
-
-### Choose the device
-
-`runtime.device` decides where the model runs. It is `auto` unless changed, and a configuration written before this setting existed also means `auto`.
-
-| Device | Behavior |
-| --- | --- |
-| `auto` | The GPU when the worker was built with Vulkan and finds one, otherwise the CPU. If loading on the GPU fails, it retries on the CPU. |
-| `cpu` | Always the CPU. |
-| `gpu` | Always the GPU. With no GPU the service refuses to start and says so, rather than silently using the CPU. |
-
-```powershell
-npm run configure -- device cpu
-```
-
-Restart after a change. The `worker.ready` startup log shows the device the model actually loaded on, for example `"device":"gpu","deviceName":"Vulkan0 NVIDIA GeForce GTX 1080 Ti"`.
-
-### Compare models and devices
+### Compare models
 
 ```powershell
 npm run smoke:models
 ```
 
-This runs each installed model through the native worker directly, so it works while the service is running. By default it runs every installed model on the GPU plus `base.en` on the CPU as a reference. Each model gets one warm-up job and then three timed runs of a 10-second synthetic English utterance (one full utterance, the longest a single inference sees). It prints a table with the device each row actually ran on, load time, first-job time (which includes the GPU's one-time shader compile), median time for the clip, state setup time, real-time factor, word error rate against the known text, and a verdict:
+This runs each installed model through the native worker directly, so it works while the service is running. By default, it runs every installed model on the device the service would use. Add `--devices cpu,gpu` to run each model on both. Each model gets one warm-up job and then three timed runs of a 10-second synthetic English utterance (one full utterance, the longest a single inference sees). It prints a table with the device each row actually ran on, load time, first-job time (which includes the GPU's one-time shader compile), median time for the clip, state setup time, real-time factor, word error rate against the known text, and a verdict:
 
 - **keeps up**: at most 2,000 ms, which is the default preview cadence and leaves room for two inferences inside SaySlate's 4-second Stop window;
 - **tight**: at most 4,000 ms;
@@ -109,15 +105,18 @@ Options: `--models medium.en,large-v3`, `--devices cpu,gpu` (every chosen model 
 
 ```powershell
 npm start
+npm start <model>
 ```
 
-The gateway listens only on `127.0.0.1:8178`. Windows Firewall should not need an inbound rule for loopback traffic; do not create a public rule. Press `Ctrl+C` for graceful shutdown. If the worker exits or model loading, asset verification, configuration validation, or port binding fails, the gateway closes its sessions and exits with an explicit error. Restart remains manual.
+The first form starts with the model used last; the second switches first (see [Choose the model](#choose-the-model)). The gateway listens only on `127.0.0.1:8178`. Windows Firewall should not need an inbound rule for loopback traffic; do not create a public rule. Press `Ctrl+C` for graceful shutdown. If the worker exits or model loading, asset verification, configuration validation, or port binding fails, the gateway closes its sessions and exits with an explicit error. Restart remains manual.
 
 The default preview interval is 2,000 ms. Override it globally or per session within 1,500–3,000 ms:
 
 ```powershell
 node src/cli.mjs configure preview 2500
 ```
+
+A preview can't come back sooner than the model takes to run. Whisper always processes a fixed 30-second window, so a short preview costs about as much as a full 10-second utterance. On a GTX 1080 Ti, `large-v3-turbo` took 1,397 ms on a 3-second clip and 1,341 ms on a 10-second one. With the large models, a 1,500 ms interval is already about as fast as previews can arrive.
 
 ## API and clients
 

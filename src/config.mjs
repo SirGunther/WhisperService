@@ -1,11 +1,10 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { execFile } from 'node:child_process';
-import { access, chmod, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
 import { promisify } from 'node:util';
-import { DEFAULT_DEVICE, DEFAULT_MODEL_ID, DEFAULTS, DEVICES, HOST, MODELS, PORT, PROTOCOL_VERSION, WHISPER_CPP_TAG } from './constants.mjs';
+import { DEFAULT_MODEL_ID, DEFAULTS, HOST, MODELS, PORT, PROTOCOL_VERSION, WHISPER_CPP_TAG } from './constants.mjs';
 import { ServiceError } from './errors.mjs';
-import { sha256 } from './worker-client.mjs';
 
 export function servicePaths(env = process.env) {
   const root = resolve(env.WHISPER_SERVICE_HOME || join(env.LOCALAPPDATA || '', 'WhisperService'));
@@ -49,21 +48,9 @@ export function defaultConfig(paths = servicePaths()) {
       workerPath: paths.worker,
       modelPath: paths.model,
       modelSha256: MODELS[DEFAULT_MODEL_ID].sha256,
-      whisperCppTag: WHISPER_CPP_TAG,
-      device: DEFAULT_DEVICE
+      whisperCppTag: WHISPER_CPP_TAG
     }
   };
-}
-
-export function deviceForConfig(config) {
-  return config?.runtime?.device ?? DEFAULT_DEVICE;
-}
-
-export function parseDevice(value) {
-  if (!DEVICES.includes(value)) {
-    throw new ServiceError('INVALID_CONFIGURATION', `runtime.device must be one of: ${DEVICES.join(', ')}.`);
-  }
-  return value;
 }
 
 export function parseExactOrigin(value) {
@@ -123,7 +110,6 @@ export function validateConfig(config) {
   if (!config.runtime?.workerPath || !config.runtime?.modelPath || !config.runtime?.modelSha256 || config.runtime?.whisperCppTag !== WHISPER_CPP_TAG) {
     throw new ServiceError('INVALID_CONFIGURATION', 'Runtime paths and model SHA-256 are required.');
   }
-  if (config.runtime.device !== undefined) parseDevice(config.runtime.device);
   modelIdForConfig(config);
   return config;
 }
@@ -138,21 +124,6 @@ export function modelIdForConfig(config, catalog = MODELS) {
   const id = Object.keys(catalog).find((candidate) => catalog[candidate].file === file && catalog[candidate].sha256 === modelSha256.toLowerCase());
   if (!id) throw new ServiceError('INVALID_CONFIGURATION', 'The configured model is not a known, correctly pinned model.');
   return id;
-}
-
-export async function selectModel(config, modelId, paths = servicePaths(), catalog = MODELS) {
-  const entry = catalog[modelId];
-  if (!entry) {
-    throw new ServiceError('INVALID_CONFIGURATION', `Unknown model id ${modelId}. Valid ids: ${Object.keys(catalog).join(', ')}.`);
-  }
-  const modelPath = join(paths.models, entry.file);
-  try { await access(modelPath); }
-  catch { throw new ServiceError('INVALID_CONFIGURATION', `${entry.file} is not installed. Run npm run setup -- --model ${modelId} to install it.`); }
-  const actual = await sha256(modelPath);
-  if (actual.toLowerCase() !== entry.sha256.toLowerCase()) {
-    throw new ServiceError('INVALID_CONFIGURATION', `${entry.file} does not match the pinned SHA-256 for ${modelId}. Run npm run setup -- --model ${modelId} to reinstall it.`);
-  }
-  return { ...config, runtime: { ...config.runtime, modelPath, modelSha256: entry.sha256 } };
 }
 
 async function atomicJson(path, value) {

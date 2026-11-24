@@ -41,6 +41,13 @@ export class WhisperService extends EventEmitter {
     if (!this.worker.ready) throw new ServiceError('WORKER_FAILURE', 'The native worker did not become ready.');
     this.logger.info('worker.ready', { ready: true, model: this.worker.metadata?.model, language: 'en', device: this.worker.metadata?.device, deviceName: this.worker.metadata?.deviceName });
     try {
+      const warmUpMs = await this.manager.warmUp();
+      if (warmUpMs !== null) this.logger.info('worker.warmed', { durationMs: warmUpMs });
+    } catch (error) {
+      if (startWorker) await this.worker.close?.();
+      throw new ServiceError('WORKER_FAILURE', `The model loaded but its warm-up transcription failed: ${error.message}`);
+    }
+    try {
       this.http.listen({ host: HOST, port: PORT });
       await once(this.http, 'listening');
     }

@@ -24,8 +24,9 @@ export const MODELS = Object.freeze({
   'large-v3': pinnedModel('large-v3', '64d182b440b98d5203c4f9bd541544d84c605196c4f7b845dfa11fb23594d1e2'),
   'large-v3-turbo': pinnedModel('large-v3-turbo', '1fc70f774d38eb169993ac391eea357ef47c88757ef72ee5943879b7e8e2bc69')
 });
+// Values for whisper-worker.exe --device. The service always passes auto (the GPU when there is one, otherwise
+// the CPU); smoke:models can ask for cpu or gpu to compare them.
 export const DEVICES = Object.freeze(['auto', 'cpu', 'gpu']);
-export const DEFAULT_DEVICE = 'auto';
 export const WHISPER_CPP_TAG = 'v1.9.1';
 
 export const DEFAULTS = Object.freeze({

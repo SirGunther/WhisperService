@@ -21,7 +21,7 @@ function decodeJson(encoded) {
 const STARTUP_EXIT_MESSAGES = Object.freeze({
   2: 'Native worker rejected its arguments.',
   3: 'Native worker could not load the model on the selected device.',
-  4: 'No GPU device is available and runtime.device is gpu. Run npm run configure -- device auto (or cpu) and restart.'
+  4: 'No GPU device is available, and the worker was started with --device gpu.'
 });
 
 export function workerExitMessage(code, signal, { ready = false } = {}) {

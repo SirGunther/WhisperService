@@ -32,13 +32,13 @@ test('parseArgs rejects unknown models, unknown devices, bad run counts, missing
   assert.throws(() => parseArgs(['--fast']), /Unknown argument --fast/);
 });
 
-test('the default matrix runs every installed model on the GPU plus base.en on the CPU, in catalog order', () => {
+test('the default matrix runs every installed model once on auto, in catalog order, so it works on a machine without a GPU', () => {
   assert.deepEqual(buildMatrix({ models: null, devices: null, installed: ['large-v3', 'base.en', 'tiny.en'] }), [
-    { model: 'base.en', device: 'cpu' },
-    { model: 'tiny.en', device: 'gpu' },
-    { model: 'base.en', device: 'gpu' },
-    { model: 'large-v3', device: 'gpu' }
+    { model: 'tiny.en', device: 'auto' },
+    { model: 'base.en', device: 'auto' },
+    { model: 'large-v3', device: 'auto' }
   ]);
+  assert.deepEqual(buildMatrix({ models: null, devices: null, installed: [] }), []);
 });
 
 test('explicit models and devices replace the default matrix', () => {
@@ -48,7 +48,7 @@ test('explicit models and devices replace the default matrix', () => {
     { model: 'large-v3-turbo', device: 'cpu' },
     { model: 'large-v3-turbo', device: 'gpu' }
   ]);
-  assert.deepEqual(buildMatrix({ models: ['medium.en'], devices: null, installed: ['base.en'] }), [{ model: 'medium.en', device: 'gpu' }]);
+  assert.deepEqual(buildMatrix({ models: ['medium.en'], devices: null, installed: ['base.en'] }), [{ model: 'medium.en', device: 'auto' }]);
   assert.deepEqual(buildMatrix({ models: null, devices: ['cpu'], installed: ['base.en', 'small.en'] }), [
     { model: 'base.en', device: 'cpu' },
     { model: 'small.en', device: 'cpu' }
