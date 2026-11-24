@@ -25,7 +25,7 @@ test('the native worker is started with the configured device, defaulting to aut
 test('a worker that exits with code 4 before READY fails startup with an explicit no-GPU message', async () => {
   const fixture = fileURLToPath(new URL('./fixtures/fake-worker.mjs', import.meta.url));
   const worker = new WorkerClient({ command: process.execPath, args: [fixture, '--exit-code', '4'], workerPath: 'unused', modelPath: 'unused', modelSha256: '0'.repeat(64), startupMs: 2_000 });
-  await assert.rejects(() => worker.start({ verifyAssets: false }), (error) => error.code === 'WORKER_FAILURE' && /No GPU device is available/.test(error.message) && /configure -- device/.test(error.message));
+  await assert.rejects(() => worker.start({ verifyAssets: false }), (error) => error.code === 'WORKER_FAILURE' && /No GPU device is available, and the worker was started with --device gpu/.test(error.message));
   assert.equal(worker.ready, false);
 });
 

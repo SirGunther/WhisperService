@@ -2,7 +2,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { mkdir, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { DEFAULTS, PROTOCOL_VERSION } from './constants.mjs';
-import { encodeWav, pcmDurationMs, pcmRms, validatePcm16 } from './audio.mjs';
+import { encodeWav, makeSilencePcm, pcmDurationMs, pcmRms, validatePcm16 } from './audio.mjs';
 import { ServiceError, errorEnvelope } from './errors.mjs';
 import { InferenceScheduler } from './scheduler.mjs';
 import { tokenMatches } from './config.mjs';
@@ -81,6 +81,8 @@ export class SessionManager {
       speechDetected: false,
       nextPreviewMs: 0,
       requestedRevision: 0,
+      emittedRevision: 0,
+      discardPreviews: false,
       finalized: false
     };
   }
@@ -206,7 +208,12 @@ export class SessionManager {
     const key = `${session.id}:${utterance.id}`;
     void this.scheduler.enqueuePreview(key, ({ queueMs }) => this.#infer(snapshot, { session, utterance, revision, queueMs }))
       .then((result) => {
-        if (!result || result.superseded || utterance.finalized || session.closed || revision !== utterance.requestedRevision || !result.text) return;
+        // Previews finish one at a time in revision order, so a finished preview is the newest text so far even
+        // when a newer one has already been requested. It is also still shown after a pause or rollover finalized
+        // the utterance: inference is serialized, so the final is queued behind this preview and has not been sent.
+        // An explicit stop or flush discards it; the client asked for the final.
+        if (!result || result.superseded || utterance.discardPreviews || session.closed || revision <= utterance.emittedRevision || !result.text) return;
+        utterance.emittedRevision = revision;
         this.#emit(session, event('transcript.partial', {
           sessionId: session.id,
           utteranceId: utterance.id,
@@ -223,6 +230,7 @@ export class SessionManager {
     const utterance = session.utterance;
     if (utterance.finalized) return Promise.resolve();
     utterance.finalized = true;
+    utterance.discardPreviews = reason === 'stop' || reason === 'flush';
     const snapshot = utterance.bytes ? Buffer.concat(utterance.chunks, utterance.bytes) : null;
     utterance.chunks.length = 0;
     utterance.bytes = 0;
@@ -284,6 +292,22 @@ export class SessionManager {
       try { await unlink(path); } catch {}
       pcm.fill(0);
     }
+  }
+
+  // On the GPU, runs one throwaway transcription of silence so first-use setup (such as shader compilation after
+  // a driver update) happens at startup instead of in the first dictation. Returns its duration, or null on the CPU.
+  async warmUp(durationMs = 1_000) {
+    if (this.worker.metadata?.device !== 'gpu') return null;
+    await mkdir(this.tempDirectory, { recursive: true });
+    const path = join(this.tempDirectory, `${randomUUID()}.wav`);
+    const started = performance.now();
+    try {
+      await writeFile(path, encodeWav(makeSilencePcm(durationMs)), { flag: 'wx' });
+      await this.worker.transcribe(path);
+    } finally {
+      try { await unlink(path); } catch {}
+    }
+    return Math.round(performance.now() - started);
   }
 
   async transcribeWav(wav, pcm) {

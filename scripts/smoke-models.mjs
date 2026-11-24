@@ -23,7 +23,6 @@ export const SAYSLATE_STOP_WINDOW_MS = 4_000;
 const INFERENCES_IN_STOP_WINDOW = 2;
 const BYTES_PER_SECOND = SAMPLE_RATE * CHANNELS * (BITS_PER_SAMPLE / 8);
 const DEFAULT_RUNS = 3;
-const BASELINE_ROW = Object.freeze({ model: 'base.en', device: 'cpu' });
 
 export function parseArgs(argv) {
   const options = { models: null, devices: null, worker: null, runs: DEFAULT_RUNS, json: false, wav: null, expect: null };
@@ -54,14 +53,14 @@ export function parseArgs(argv) {
   return options;
 }
 
-// Default: every installed model on the GPU, plus base.en on the CPU as the reference.
+// Default: every installed model on auto, the device the service itself would use (the GPU when there is one,
+// otherwise the CPU), so the default run works on any machine. --devices cpu,gpu compares the two.
 export function buildMatrix({ models, devices, installed }) {
   const catalogOrder = Object.keys(MODELS);
   const chosen = (models || installed).slice().sort((left, right) => catalogOrder.indexOf(left) - catalogOrder.indexOf(right));
   const rows = [];
-  if (!models && !devices) rows.push({ ...BASELINE_ROW });
   for (const model of chosen) {
-    for (const device of devices || ['gpu']) rows.push({ model, device });
+    for (const device of devices || ['auto']) rows.push({ model, device });
   }
   return rows;
 }
@@ -125,7 +124,7 @@ export async function runRow(row, { modelsDir, workerPath, clipPath, clipMs, run
   }
   if (!hashCache.has(row.model)) hashCache.set(row.model, (await hashFile(modelPath)).toLowerCase() === entry.sha256);
   if (!hashCache.get(row.model)) {
-    result.reason = `${entry.file} does not match its pinned SHA-256: npm run setup -- --model ${row.model} --skip-build`;
+    result.reason = `${entry.file} does not match its pinned SHA-256: delete it, then npm run setup -- --model ${row.model} --skip-build`;
     return result;
   }
   const worker = createWorker({ workerPath, modelPath, modelSha256: entry.sha256, device: row.device, startupMs: DEFAULTS.workerStartupMs });

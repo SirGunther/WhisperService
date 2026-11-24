@@ -1,12 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { MODELS } from '../src/constants.mjs';
 import { createLogger } from '../src/logger.mjs';
-import { defaultConfig, deviceForConfig, initializeUserFiles, loadToken, modelIdForConfig, parseExactOrigin, rotateToken, selectModel, servicePaths, tokenMatches, validateConfig } from '../src/config.mjs';
+import { defaultConfig, initializeUserFiles, loadToken, modelIdForConfig, parseExactOrigin, rotateToken, servicePaths, tokenMatches, validateConfig } from '../src/config.mjs';
 
 test('default configuration preserves the approved bounds', () => {
   const paths = servicePaths({ WHISPER_SERVICE_HOME: join(tmpdir(), 'whisper-config') });
@@ -73,43 +72,6 @@ test('validateConfig rejects a mismatched file/hash pair and an unknown hash', (
   assert.throws(() => validateConfig(unknown), /known, correctly pinned/);
 });
 
-test('selectModel returns an updated configuration for an installed, verified file and leaves the input unchanged', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'whisper-service-select-model-'));
-  try {
-    const paths = servicePaths({ WHISPER_SERVICE_HOME: root });
-    const modelFile = join(paths.models, 'test-model.bin');
-    await mkdir(paths.models, { recursive: true });
-    await writeFile(modelFile, 'fixture-model-bytes');
-    const digest = createHash('sha256').update('fixture-model-bytes').digest('hex');
-    const catalog = { 'test.model': { file: 'test-model.bin', sha256: digest, url: 'https://example.invalid/test-model.bin' } };
-
-    const original = defaultConfig(paths);
-    const snapshot = JSON.stringify(original);
-    const updated = await selectModel(original, 'test.model', paths, catalog);
-
-    assert.equal(updated.runtime.modelPath, modelFile);
-    assert.equal(updated.runtime.modelSha256, digest);
-    assert.equal(JSON.stringify(original), snapshot);
-  } finally { await rm(root, { recursive: true, force: true }); }
-});
-
-test('selectModel rejects a missing file, a hash mismatch, and an unknown id', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'whisper-service-select-model-bad-'));
-  try {
-    const paths = servicePaths({ WHISPER_SERVICE_HOME: root });
-    await mkdir(paths.models, { recursive: true });
-    const config = defaultConfig(paths);
-    const catalog = { 'test.model': { file: 'test-model.bin', sha256: 'a'.repeat(64), url: 'https://example.invalid/test-model.bin' } };
-
-    await assert.rejects(() => selectModel(config, 'test.model', paths, catalog), /npm run setup -- --model/);
-
-    await writeFile(join(paths.models, 'test-model.bin'), 'wrong-bytes');
-    await assert.rejects(() => selectModel(config, 'test.model', paths, catalog), /npm run setup -- --model/);
-
-    await assert.rejects(() => selectModel(config, 'unknown.id', paths, catalog), /Valid ids: test\.model/);
-  } finally { await rm(root, { recursive: true, force: true }); }
-});
-
 test('logger allowlist cannot leak tokens, transcript text, audio, or paths', () => {
   const output = [];
   const logger = createLogger({ log: (line) => output.push(line), error: (line) => output.push(line) });
@@ -144,25 +106,10 @@ test('validateConfig resolves every catalog model from its file and hash', () =>
   }
 });
 
-test('runtime.device defaults to auto, accepts auto, cpu and gpu, and rejects anything else', () => {
+test('the default configuration has no device setting, and one left by the previous release is ignored', () => {
   const paths = servicePaths({ WHISPER_SERVICE_HOME: join(tmpdir(), 'whisper-config-device') });
   const config = defaultConfig(paths);
-  assert.equal(config.runtime.device, 'auto');
-  for (const device of ['auto', 'cpu', 'gpu']) {
-    config.runtime.device = device;
-    assert.equal(deviceForConfig(validateConfig(config)), device);
-  }
-  for (const device of ['cuda', 'GPU', '', null, 1]) {
-    config.runtime.device = device;
-    assert.throws(() => validateConfig(config), /runtime\.device must be one of: auto, cpu, gpu/);
-  }
-});
-
-test('a configuration written before runtime.device existed stays valid and means auto', () => {
-  const paths = servicePaths({ WHISPER_SERVICE_HOME: join(tmpdir(), 'whisper-config-legacy') });
-  const legacy = defaultConfig(paths);
-  delete legacy.runtime.device;
-  assert.equal(validateConfig(legacy), legacy);
-  assert.equal(deviceForConfig(legacy), 'auto');
-  assert.equal('device' in legacy.runtime, false);
+  assert.equal('device' in config.runtime, false);
+  const previous = { ...config, runtime: { ...config.runtime, device: 'auto' } };
+  assert.equal(validateConfig(previous), previous);
 });

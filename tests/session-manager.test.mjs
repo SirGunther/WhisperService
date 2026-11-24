@@ -51,6 +51,54 @@ test('expired tickets and idle sessions close without a transcript', async () =>
   } finally { await manager.shutdown(); await rm(root, { recursive: true, force: true }); }
 });
 
+test('warm-up runs one transcription of silence on the GPU, none on the CPU, and leaves no temporary file', async () => {
+  const state = await fixture();
+  try {
+    state.worker.metadata.device = 'cpu';
+    assert.equal(await state.manager.warmUp(), null);
+    delete state.worker.metadata.device;
+    assert.equal(await state.manager.warmUp(), null);
+    assert.equal(state.worker.calls.length, 0);
+    state.worker.metadata.device = 'gpu';
+    assert.equal(typeof await state.manager.warmUp(), 'number');
+    assert.deepEqual(state.worker.calls, [{ marker: 0, bytes: 32_000 }]);
+    assert.deepEqual(await readdir(state.root), []);
+  } finally { await state.close(); }
+});
+
+test('a failed warm-up is reported and leaves no temporary file', async () => {
+  const state = await fixture();
+  try {
+    state.worker.metadata.device = 'gpu';
+    state.worker.transcribe = async () => { throw new Error('vk::DeviceLostError'); };
+    await assert.rejects(() => state.manager.warmUp(), /DeviceLostError/);
+    assert.deepEqual(await readdir(state.root), []);
+  } finally { await state.close(); }
+});
+
+test('a preview already running when the pause is detected is shown before the final instead of being discarded', async () => {
+  const state = await fixture({ delayMs: 100 });
+  try {
+    const session = connected(state.manager, { previewMs: 1500 });
+    state.manager.acceptAudio(session.id, makeTonePcm(1600, 0.05));
+    state.manager.acceptAudio(session.id, makeSilencePcm(1200));
+    await until(() => session.ws.events.some((item) => item.type === 'transcript.final'));
+    const transcripts = session.ws.events.filter((item) => item.type.startsWith('transcript.')).map((item) => item.type);
+    assert.deepEqual(transcripts, ['transcript.partial', 'transcript.final']);
+  } finally { await state.close(); }
+});
+
+test('a preview still shows when the next one is requested before it finishes (model slower than the interval)', async () => {
+  const state = await fixture({ delayMs: 100 });
+  try {
+    const session = connected(state.manager, { previewMs: 1500 });
+    state.manager.acceptAudio(session.id, makeTonePcm(1600, 0.05));
+    state.manager.acceptAudio(session.id, makeTonePcm(1500, 0.05));
+    await until(() => session.ws.events.filter((item) => item.type === 'transcript.partial').length === 2);
+    assert.deepEqual(session.ws.events.filter((item) => item.type === 'transcript.partial').map((item) => item.revision), [1, 2]);
+  } finally { await state.close(); }
+});
+
 test('preview cadence, pause finalization, and cleanup work together', async () => {
   const state = await fixture({ delayMs: 10 });
   try {

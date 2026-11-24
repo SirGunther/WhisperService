@@ -16,13 +16,13 @@ Replace `flush` with `stop` to finalize and close, or `cancel` to erase and clos
 
 The worker is a separate private process using stdio. Its model is loaded exactly once at startup without a default inference state. Each job creates a fresh `whisper_state`, sets Whisper's `no_context` flag, supplies no prompt tokens, and destroys that state after producing the response. Persistent model weights therefore do not create persistent transcript context.
 
-The gateway starts the worker as `whisper-worker.exe --model <path> --device <auto|cpu|gpu>`, taking the device from `runtime.device` (default `auto`):
+The gateway always starts the worker as `whisper-worker.exe --model <path> --device auto`. There is no device setting. `npm run smoke:models -- --devices cpu,gpu` is the only caller that passes the other two values:
 
 | Device | Behavior |
 | --- | --- |
 | `auto` | Uses the first GPU the build can reach (Vulkan builds), otherwise the CPU. If the model fails to load on the GPU, the worker retries once on the CPU. |
 | `cpu` | Always the CPU. |
-| `gpu` | Requires a GPU. With none, the worker exits with code 4 before `READY` and the gateway refuses to start with an explicit error. |
+| `gpu` | Requires a GPU. With none, the worker exits with code 4 before `READY`, and the caller reports an explicit error. |
 
 Worker exit codes before `READY`: 2 for invalid arguments, 3 when the model cannot be loaded, 4 when `gpu` is required and no GPU device exists.
 

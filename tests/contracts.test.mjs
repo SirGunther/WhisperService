@@ -22,9 +22,8 @@ test('OpenAPI publishes each required operation and WebSocket events', async () 
   }
 });
 
-test('the configuration schema allows an optional runtime.device of auto, cpu or gpu', async () => {
+test('the configuration schema has no device setting: the device is always chosen automatically', async () => {
   const path = join(dirname(fileURLToPath(import.meta.url)), '..', 'contracts', 'schemas', 'config.schema.json');
   const schema = JSON.parse(await readFile(path, 'utf8'));
-  assert.deepEqual(schema.properties.runtime.properties.device.enum, ['auto', 'cpu', 'gpu']);
-  assert.equal(schema.properties.runtime.required.includes('device'), false);
+  assert.deepEqual(Object.keys(schema.properties.runtime.properties), ['workerPath', 'modelPath', 'modelSha256', 'whisperCppTag']);
 });

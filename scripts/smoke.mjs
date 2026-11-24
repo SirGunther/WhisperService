@@ -4,7 +4,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawn } from 'node:child_process';
 import { decodeWav } from '../src/audio.mjs';
-import { deviceForConfig, loadConfig, loadToken, servicePaths } from '../src/config.mjs';
+import { loadConfig, loadToken, servicePaths } from '../src/config.mjs';
 import { DEFAULTS } from '../src/constants.mjs';
 import { createLogger } from '../src/logger.mjs';
 import { WhisperService } from '../src/service.mjs';
@@ -61,7 +61,7 @@ async function main() {
   const paths = servicePaths();
   const config = await loadConfig(paths);
   const token = await loadToken(paths);
-  const worker = new WorkerClient({ workerPath: config.runtime.workerPath, modelPath: config.runtime.modelPath, modelSha256: config.runtime.modelSha256, device: deviceForConfig(config), startupMs: DEFAULTS.workerStartupMs });
+  const worker = new WorkerClient({ workerPath: config.runtime.workerPath, modelPath: config.runtime.modelPath, modelSha256: config.runtime.modelSha256, startupMs: DEFAULTS.workerStartupMs });
   let modelInitializations = 0;
   worker.on('ready', () => { modelInitializations += 1; });
   const service = new WhisperService({ config, token, worker, tempDirectory: paths.temp, logger: createLogger() });

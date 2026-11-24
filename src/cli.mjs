@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 import { pathToFileURL } from 'node:url';
 import { createLogger } from './logger.mjs';
-import { deviceForConfig, loadConfig, loadToken, parseDevice, parseExactOrigin, rotateToken, saveConfig, selectModel, servicePaths } from './config.mjs';
-import { DEFAULTS, DEVICES, MODELS } from './constants.mjs';
+import { loadConfig, loadToken, parseExactOrigin, saveConfig, rotateToken, servicePaths } from './config.mjs';
+import { DEFAULTS, HOST, MODELS, PORT } from './constants.mjs';
+import { installModel, prepareModel } from './models.mjs';
 import { WorkerClient } from './worker-client.mjs';
 import { WhisperService } from './service.mjs';
 
@@ -10,23 +11,30 @@ export function usageText() {
   return `WhisperService 1.0.0
 
 Commands:
-  serve
+  serve [model]            Start with the model used last, or switch to [model] first
+                           (it is downloaded and verified if it is not installed yet).
   configure show
   configure origin add <exact-origin>
   configure origin remove <exact-origin>
   configure origin list
   configure preview <1500-3000>
-  configure model <${Object.keys(MODELS).join('|')}>
-  configure device <${DEVICES.join('|')}>
+  configure model <model>  Switch without starting.
   token show
-  token rotate`;
+  token rotate
+
+Models: ${Object.keys(MODELS).join(', ')}`;
 }
 
 function usage() {
   console.log(usageText());
 }
 
-async function configure(args, paths) {
+export function readyLine(modelId, metadata) {
+  const where = metadata?.device === 'gpu' ? `the GPU (${metadata.deviceName})` : 'the CPU';
+  return `WhisperService is ready: ${modelId} on ${where}, at http://${HOST}:${PORT}. Press Ctrl+C to stop.`;
+}
+
+async function configure(args, paths, install) {
   const config = await loadConfig(paths);
   const [section, action, value] = args;
   if (section === 'show') {
@@ -55,22 +63,16 @@ async function configure(args, paths) {
     return;
   }
   if (section === 'model' && action) {
-    const updated = await selectModel(config, action, paths);
-    await saveConfig(updated, paths);
-    console.log(`Model set to ${action}. Restart WhisperService to load it.`);
-    return;
-  }
-  if (section === 'device' && action) {
-    config.runtime = { ...config.runtime, device: parseDevice(action) };
-    await saveConfig(config, paths);
-    console.log(`Device set to ${action}. Restart WhisperService to apply it.`);
+    const { switched } = await prepareModel(paths, action, { install });
+    if (switched) console.log('Restart WhisperService to load it.');
+    else console.log(`${action} is already the selected model.`);
     return;
   }
   usage();
   process.exitCode = 2;
 }
 
-export async function main(argv = process.argv.slice(2)) {
+export async function main(argv = process.argv.slice(2), { install = installModel } = {}) {
   const paths = servicePaths();
   const [command, ...args] = argv;
   if (command === 'token' && args[0] === 'show') {
@@ -83,22 +85,21 @@ export async function main(argv = process.argv.slice(2)) {
     return;
   }
   if (command === 'configure') {
-    await configure(args, paths);
+    await configure(args, paths, install);
     return;
   }
-  if (command !== 'serve') {
+  if (command !== 'serve' || args.length > 1) {
     usage();
     process.exitCode = 2;
     return;
   }
-  const config = await loadConfig(paths);
+  const { config, modelId } = await prepareModel(paths, args[0], { install });
   const token = await loadToken(paths);
   const logger = createLogger();
   const worker = new WorkerClient({
     workerPath: config.runtime.workerPath,
     modelPath: config.runtime.modelPath,
     modelSha256: config.runtime.modelSha256,
-    device: deviceForConfig(config),
     startupMs: DEFAULTS.workerStartupMs
   });
   const service = new WhisperService({ config, token, worker, tempDirectory: paths.temp, logger });
@@ -112,6 +113,7 @@ export async function main(argv = process.argv.slice(2)) {
   process.once('SIGTERM', () => void stop('termination'));
   service.once('fatal', () => void stop('worker_failure', 1));
   await service.start();
+  console.log(readyLine(modelId, worker.metadata));
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
